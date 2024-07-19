@@ -44,12 +44,21 @@ const saveMessageToDB = async (messageObj) => {
 
 const searchForFiles = async (searchText) => {
   try {
-    const regex = new RegExp(searchText, "i"); // "i" for case-insensitive
+    const words = searchText
+      .replace(/\./g, "")
+      .split(/\s+/)
+      .filter((word) => isNaN(word));
+      
+    const regexes = words.map((word) => ({
+      "metadata.name": { $regex: new RegExp(word, "i") },
+    }));
+
+    // Find files that match any words and sort alphabetically
     const files = await File.find({
-      "metadata.name": { $regex: regex },
+      $or: regexes,
     })
       .sort({ "metadata.name": 1 })
-      .lean(); // Sort alphabetically by metadata.name
+      .lean();
 
     return files;
   } catch (error) {
