@@ -44,23 +44,37 @@ const saveMessageToDB = async (messageObj) => {
 
 const searchForFiles = async (searchText) => {
   try {
+    // Split search text into words, remove non-alphabetic characters, and filter out numbers
     const words = searchText
-      .replace(/\./g, "")
-      .split(/\s+/)
-      .filter((word) => isNaN(word));
-      
-    const regexes = words.map((word) => ({
-      "metadata.name": { $regex: new RegExp(word, "i") },
-    }));
+      .replace(/\W+/g, " ")
+      .split(" ")
+      .filter((word) => isNaN(word) && word);
 
-    // Find files that match any words and sort alphabetically
-    const files = await File.find({
-      $or: regexes,
-    })
-      .sort({ "metadata.name": 1 })
-      .lean();
+    // Construct an array of individual regex expressions for each word
+    const regexes = words.map((word) => new RegExp(word, "i"));
 
-    return files;
+    // Fetch all files that match at least one word
+    const allFiles = await File.find({
+      $or: regexes.map((regex) => ({
+        "metadata.name": { $regex: regex },
+      })),
+    }).lean();
+
+    // Rank files based on the count of matching words in metadata.name
+    const rankedFiles = allFiles
+      .map((file) => {
+        // Count number of matches for each word
+        const matchCount = words.reduce((count, word) => {
+          return file.metadata.name.match(new RegExp(word, "i"))
+            ? count + 1
+            : count;
+        }, 0);
+        return { ...file, relevance: matchCount };
+      })
+      .filter((file) => file.relevance > 0) // Only keep files with at least one match
+      .sort((a, b) => b.relevance - a.relevance); // Sort by relevance (highest first)
+
+    return rankedFiles;
   } catch (error) {
     console.error("Error searching for files:", error);
     return [];
